@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+module="${1:-}"
+text='—'; tooltip='Unavailable'
+case "$module" in
+  cpu)
+    read -r _ a b c d e f g h i j < /proc/stat; total=$((a+b+c+d+e+f+g+h+i+j)); idle=$((d+e))
+    sleep 1
+    read -r _ a b c d e f g h i j < /proc/stat; next=$((a+b+c+d+e+f+g+h+i+j)); next_idle=$((d+e))
+    delta=$((next-total)); idle_delta=$((next_idle-idle))
+    if (( delta > 0 )); then text="$(( (delta-idle_delta)*100/delta ))%"; tooltip="CPU usage: $text"; fi
+    ;;
+  memory)
+    total="$(awk '/MemTotal:/ {print $2}' /proc/meminfo)"; avail="$(awk '/MemAvailable:/ {print $2}' /proc/meminfo)"
+    if [[ -n "$total" && -n "$avail" && "$total" -gt 0 ]]; then used=$(( (total-avail)*100/total )); text="${used}%"; tooltip="Memory: $(numfmt --to=iec --suffix=B $(((total-avail)*1024))) used of $(numfmt --to=iec --suffix=B $((total*1024)))"; fi
+    ;;
+  disk) read -r text tooltip < <(df -hP / | awk 'NR==2 {print $5, $3 " used of " $2 " on /"}') ;;
+  battery)
+    battery="$(find /sys/class/power_supply -maxdepth 2 -name capacity -type f -print -quit 2>/dev/null || true)"
+    if [[ -n "$battery" ]]; then read -r text < "$battery"; text="${text}%"; tooltip="Battery charge: $text"; else text='AC'; tooltip='No battery detected'; fi
+    ;;
+  temperature)
+    temp="$(sensors 2>/dev/null | awk '/Package id 0:|Tctl:|temp1:/ {gsub(/[+°C]/, "", $2); print $2; exit}' || true)"
+    if [[ -n "$temp" ]]; then text="${temp}°C"; tooltip="System temperature: $text"; fi
+    ;;
+  *) echo 'Usage: lightos-widget {cpu|memory|disk|battery|temperature}' >&2; exit 2 ;;
+esac
+printf '{"text":"%s","tooltip":"%s"}\n' "$text" "$tooltip"

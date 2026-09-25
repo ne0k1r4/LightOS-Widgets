@@ -1,0 +1,7 @@
+{
+  "cpu": { "format": "CPU {usage}%", "interval": 3 },
+  "custom/memory": { "exec": "lightos-widget memory", "return-type": "json", "interval": 5 },
+  "custom/storage": { "exec": "lightos-widget disk", "return-type": "json", "interval": 60 },
+  "custom/battery": { "exec": "lightos-widget battery", "return-type": "json", "interval": 30 },
+  "custom/temperature": { "exec": "lightos-widget temperature", "return-type": "json", "interval": 10 }
+}
