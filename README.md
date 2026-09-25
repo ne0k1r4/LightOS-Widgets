@@ -8,7 +8,7 @@ Waybar helper modules for LightOS. This repository provides a small JSON-produci
 ./install.sh
 ```
 
-The command is installed to `~/.local/bin/lightos-widget`. Available modules are CPU, memory, root storage, battery, and temperature. Sensors and battery data are shown when matching Linux interfaces are available.
+The command is installed to `~/.local/bin/lightos-widget`. Available modules are CPU, memory, root storage, battery, Wi-Fi, Bluetooth, and temperature. Sensors and battery data are shown when matching Linux interfaces are available.
 
 Requirements: Bash, `awk`, `sed`; `jq` is used by the sample Waybar modules.
 

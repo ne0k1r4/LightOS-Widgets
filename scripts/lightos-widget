@@ -4,9 +4,9 @@ module="${1:-}"
 text='—'; tooltip='Unavailable'
 case "$module" in
   cpu)
-    read -r _ a b c d e f g h i j < /proc/stat; total=$((a+b+c+d+e+f+g+h+i+j)); idle=$((d+e))
+    read -r _ a b c d e f g h < /proc/stat; total=$((a+b+c+d+e+f+g+h)); idle=$((d+e))
     sleep 1
-    read -r _ a b c d e f g h i j < /proc/stat; next=$((a+b+c+d+e+f+g+h+i+j)); next_idle=$((d+e))
+    read -r _ a b c d e f g h < /proc/stat; next=$((a+b+c+d+e+f+g+h)); next_idle=$((d+e))
     delta=$((next-total)); idle_delta=$((next_idle-idle))
     if (( delta > 0 )); then text="$(( (delta-idle_delta)*100/delta ))%"; tooltip="CPU usage: $text"; fi
     ;;
@@ -19,10 +19,22 @@ case "$module" in
     battery="$(find /sys/class/power_supply -maxdepth 2 -name capacity -type f -print -quit 2>/dev/null || true)"
     if [[ -n "$battery" ]]; then read -r text < "$battery"; text="${text}%"; tooltip="Battery charge: $text"; else text='AC'; tooltip='No battery detected'; fi
     ;;
+  network)
+    if command -v nmcli >/dev/null; then
+      ssid="$(nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | awk -F: '$1=="yes" {sub(/^yes:/, ""); print; exit}')"
+      if [[ -n "$ssid" ]]; then text="$ssid"; tooltip="Connected to $ssid"; else text='Offline'; tooltip='No active Wi-Fi connection'; fi
+    fi
+    ;;
+  bluetooth)
+    if command -v bluetoothctl >/dev/null; then
+      if bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; then text='On'; tooltip='Bluetooth is powered on'; else text='Off'; tooltip='Bluetooth is powered off'; fi
+    else text='—'; tooltip='bluetoothctl is unavailable'; fi
+    ;;
   temperature)
     temp="$(sensors 2>/dev/null | awk '/Package id 0:|Tctl:|temp1:/ {gsub(/[+°C]/, "", $2); print $2; exit}' || true)"
     if [[ -n "$temp" ]]; then text="${temp}°C"; tooltip="System temperature: $text"; fi
     ;;
-  *) echo 'Usage: lightos-widget {cpu|memory|disk|battery|temperature}' >&2; exit 2 ;;
+  *) echo 'Usage: lightos-widget {cpu|memory|disk|battery|network|bluetooth|temperature}' >&2; exit 2 ;;
 esac
-printf '{"text":"%s","tooltip":"%s"}\n' "$text" "$tooltip"
+escape_json() { local value="$1"; value="${value//\\/\\\\}"; value="${value//\"/\\\"}"; value="${value//$'\n'/ }"; printf '%s' "$value"; }
+printf '{"text":"%s","tooltip":"%s"}\n' "$(escape_json "$text")" "$(escape_json "$tooltip")"
