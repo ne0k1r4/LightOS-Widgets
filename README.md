@@ -1,15 +1,15 @@
 # LightOS Widgets
 
-Waybar helper modules for LightOS. This repository provides a small JSON-producing status command and ready-to-copy Waybar module examples.
+Source repository for the LightOS widget suite: the visualizer, clock, widget daemon and client, brightness, calendar, host, microphone, music, playerctl, recent-apps, stats, system-info, and volume widgets.
+
+## Build
+
+Run `make` to build the clock, light/dark visualizers, widget daemon, and client. `visualizer/build.sh` builds both visualizer variants.
 
 ## Install
 
-```sh
-./install.sh
-```
+Install the LightOS desktop defaults and their dependencies first, then run `./install.sh`. The installer places widget executables under `~/.config/Light` and helper commands under `~/.local/bin`. The main LightOS installer includes this repository as a component.
 
-The command is installed to `~/.local/bin/lightos-widget`. Available modules are CPU, memory, root storage, battery, Wi-Fi, Bluetooth, and temperature. Sensors and battery data are shown when matching Linux interfaces are available.
+Build dependencies are GTKmm 3, GTK 3, gtk-layer-shell, PulseAudio, jsoncpp, gio, libcurl, pkg-config, and make.
 
-Requirements: Bash, `awk`, `sed`; `jq` is used by the sample Waybar modules.
-
-MIT licensed. See [LICENSE](LICENSE).
+The original MIT notices for source files imported from ElysiaOS are retained in [LICENSES/ElysiaOS-MIT.txt](LICENSES/ElysiaOS-MIT.txt). The repository's own license is in [LICENSE](LICENSE).

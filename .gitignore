@@ -1,1 +1,6 @@
 *.o
+clock/clock_widget
+visualizer/visualizer-light
+visualizer/visualizer-dark
+widgets/light-widget-daemon
+widgets/light-widget-client
