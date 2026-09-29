@@ -147,7 +147,7 @@ public:
     Visualizer(AudioMeter& m) : meter(m), heights(48, 0.0f) {
         set_size_request(-1, 200);
 
-        // Load both bar-top images (alternated across bars)
+        // Load both images shown floating above wave peaks
         std::string cfg = std::string(g_get_user_config_dir()) + "/Light/assets/settings/";
         try { image_a = Gdk::Pixbuf::create_from_file(cfg + "elyfly.png"); }
         catch (...) { std::cerr << "Visualizer: elyfly.png not found\n"; }
@@ -157,13 +157,14 @@ public:
         Glib::signal_timeout().connect([this]() {
             float peak = meter.get_peak();
             for (int i = 0; i < 48; ++i) {
-                // All bars aim for the same height — no per-bar shrink
-                float target = peak * get_height() * 1.1f;
-                heights[i] = heights[i] * 0.65f + target * 0.35f;
+                // Slight variation per band so the wave has natural shape
+                float band_boost = 1.0f + 0.3f * std::sin(i * 0.4f);
+                float target = peak * get_height() * 0.85f * band_boost;
+                heights[i] = heights[i] * 0.70f + target * 0.30f;
             }
             queue_draw();
             return true;
-        }, 67); // ~15 FPS
+        }, 33); // ~30 FPS for smooth wave
     }
 
 private:
@@ -173,60 +174,87 @@ private:
     Glib::RefPtr<Gdk::Pixbuf> image_b;  // elyhoc.png
 
     bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
-        int width = get_allocation().get_width();
+        int width  = get_allocation().get_width();
         int height = get_allocation().get_height();
-        int bar_width = width / 48;
-        int bar_gap = 2; // narrow gap so bars are wide and visible
 
+        // Clear to transparent
         cr->set_source_rgba(0, 0, 0, 0);
         cr->paint();
 
-        const Palette colors = readPalette(); // read once per frame
+        const Palette colors = readPalette();
+        const int N = (int)heights.size(); // 48 bands
+        const float step = (float)width / (N - 1);
 
-        for (int i = 0; i < 48; ++i) {
-            float bar_height = std::max(4.0f, heights[i]);
-            int x = i * bar_width;
-            int y = height - (int)bar_height;
+        // Build wave point array: y position for each band
+        std::vector<float> py(N);
+        for (int i = 0; i < N; ++i)
+            py[i] = height - std::max(4.0f, heights[i]);
 
-            // Color gradient based on bar intensity
-            float intensity = bar_height / height;
-            if (intensity < 0.35f) {
-                cr->set_source_rgba(colors.low.r, colors.low.g, colors.low.b, 0.9);
-            } else if (intensity < 0.65f) {
-                cr->set_source_rgba(colors.medium.r, colors.medium.g, colors.medium.b, 0.9);
-            } else {
-                cr->set_source_rgba(colors.high.r, colors.high.g, colors.high.b, 0.9);
-            }
+        // --- Filled wave with vertical gradient ---
+        // Construct a closed path: wave crest + bottom corners
+        cr->move_to(0, height);
+        cr->line_to(0, py[0]);
 
-            cr->rectangle(x, y, bar_width - bar_gap, bar_height);
-            cr->fill();
+        // Smooth cubic bezier through all points
+        for (int i = 0; i < N - 1; ++i) {
+            float x0 = i * step;
+            float x1 = (i + 1) * step;
+            float cp_offset = step * 0.4f;
+            cr->curve_to(
+                x0 + cp_offset, py[i],
+                x1 - cp_offset, py[i + 1],
+                x1,             py[i + 1]
+            );
+        }
 
-            // Subtle top highlight
-            cr->set_source_rgba(1.0, 1.0, 1.0, 0.4);
-            cr->rectangle(x, y, bar_width - bar_gap, std::min(3.0f, bar_height));
-            cr->fill();
+        cr->line_to(width, height);
+        cr->close_path();
 
-            // Draw alternating images on top of each bar
-            {
-                auto& img = (i % 2 == 0) ? image_a : image_b;
-                if (img && bar_height > 20) {
-                    int img_size = std::min(bar_width - bar_gap, 28);
-                    auto scaled = img->scale_simple(
-                        img_size, img_size, Gdk::INTERP_BILINEAR);
-                    int img_x = x + (bar_width - bar_gap - img_size) / 2;
-                    int img_y = y - img_size - 2;
-                    if (img_y >= 0) {
-                        Gdk::Cairo::set_source_pixbuf(cr, scaled, img_x, img_y);
-                        cr->paint();
-                    }
-                }
-            }
+        // Vertical gradient fill: pale at top, deep at bottom
+        auto grad = Cairo::LinearGradient::create(0, 0, 0, height);
+        grad->add_color_stop_rgba(0.0, colors.high.r,   colors.high.g,   colors.high.b,   0.85);
+        grad->add_color_stop_rgba(0.5, colors.medium.r, colors.medium.g, colors.medium.b, 0.60);
+        grad->add_color_stop_rgba(1.0, colors.low.r,    colors.low.g,    colors.low.b,    0.30);
+        cr->set_source(grad);
+        cr->fill_preserve();
+
+        // --- Glowing wave outline stroke ---
+        // Redraw just the wave curve (no bottom)
+        cr->move_to(0, py[0]);
+        for (int i = 0; i < N - 1; ++i) {
+            float x0 = i * step;
+            float x1 = (i + 1) * step;
+            float cp_offset = step * 0.4f;
+            cr->curve_to(
+                x0 + cp_offset, py[i],
+                x1 - cp_offset, py[i + 1],
+                x1,             py[i + 1]
+            );
+        }
+        // Outer glow (wide, semi-transparent)
+        cr->set_source_rgba(colors.high.r, colors.high.g, colors.high.b, 0.35);
+        cr->set_line_width(6.0);
+        cr->stroke_preserve();
+        // Inner bright line
+        cr->set_source_rgba(1.0, 1.0, 1.0, 0.55);
+        cr->set_line_width(1.5);
+        cr->stroke();
+
+        // --- Images floating above wave peaks (every 8th band) ---
+        const int img_size = 32;
+        for (int i = 0; i < N; i += 8) {
+            auto& img = (i % 16 == 0) ? image_a : image_b;
+            if (!img) continue;
+            float x = i * step;
+            float y = py[i] - img_size - 6;
+            if (y < 0) y = 0;
+            auto scaled = img->scale_simple(img_size, img_size, Gdk::INTERP_BILINEAR);
+            Gdk::Cairo::set_source_pixbuf(cr, scaled, (int)(x - img_size / 2), (int)y);
+            cr->paint_with_alpha(0.85);
         }
 
         if (!meter.has_audio()) {
-            // Use palette color instead of hardcoded pink
-            cr->set_source_rgba(
-                colors.medium.r, colors.medium.g, colors.medium.b, 0.8);
+            cr->set_source_rgba(colors.medium.r, colors.medium.g, colors.medium.b, 0.7);
             cr->select_font_face("sans", Cairo::FONT_SLANT_NORMAL,
                                  Cairo::FONT_WEIGHT_NORMAL);
             cr->set_font_size(12);
