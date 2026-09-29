@@ -7,6 +7,67 @@
 #include <thread>
 #include <atomic>
 
+
+#include <fstream>
+#include <string>
+
+struct RGB {
+    double r, g, b;
+};
+
+struct Palette {
+    RGB low, medium, high;
+};
+
+static RGB readColor(const std::string& name, RGB fallback) {
+    std::ifstream file(
+        std::string(g_get_user_config_dir()) +
+        "/waybar/wallpaper-colors.css"
+    );
+
+    std::string line;
+    const std::string key = "@define-color " + name;
+
+    while (std::getline(file, line)) {
+        if (line.find(key) == std::string::npos)
+            continue;
+
+        auto pos = line.find('#');
+        if (pos == std::string::npos || pos + 7 > line.size())
+            continue;
+
+        try {
+            unsigned int value =
+                std::stoul(line.substr(pos + 1, 6), nullptr, 16);
+
+            return {
+                ((value >> 16) & 0xff) / 255.0,
+                ((value >> 8) & 0xff) / 255.0,
+                (value & 0xff) / 255.0
+            };
+        } catch (...) {
+            return fallback;
+        }
+    }
+
+    return fallback;
+}
+
+static Palette readPalette() {
+    RGB pale = readColor("wallpaper_accent_pale", {0.80, 0.80, 0.90});
+    RGB soft = readColor("wallpaper_accent_soft", {0.60, 0.60, 0.85});
+    RGB accent = readColor("wallpaper_accent", {0.40, 0.40, 0.70});
+
+    double luminance =
+        0.2126 * accent.r + 0.7152 * accent.g + 0.0722 * accent.b;
+
+    // Avoid nearly black bars when the wallpaper accent is too dark.
+    if (luminance < 0.18)
+        accent = soft;
+
+    return {pale, soft, accent};
+}
+
 class AudioMeter {
 public:
     AudioMeter() : peak(0.0f), connected(false) {
@@ -123,12 +184,13 @@ private:
 
             // Color gradient based on intensity
             float intensity = bar_height / height;
-            if (intensity < 0.3f) {
-                cr->set_source_rgba(1.0, 0.75, 0.8, 0.9); // Light pink
+            const Palette colors = readPalette();
+        if (intensity < 0.3f) {
+                cr->set_source_rgba(colors.low.r, colors.low.g, colors.low.b, 0.9);
             } else if (intensity < 0.6f) {
-                cr->set_source_rgba(1.0, 0.4, 0.7, 0.9); // Medium pink
+                cr->set_source_rgba(colors.medium.r, colors.medium.g, colors.medium.b, 0.9);
             } else {
-                cr->set_source_rgba(1.0, 0.2, 0.6, 0.9); // Deep pink
+                cr->set_source_rgba(colors.high.r, colors.high.g, colors.high.b, 0.9);
             }
 
             cr->rectangle(x, y, bar_width - 12, bar_height);
