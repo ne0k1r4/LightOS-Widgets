@@ -54,18 +54,19 @@ static RGB readColor(const std::string& name, RGB fallback) {
 }
 
 static Palette readPalette() {
-    RGB pale = readColor("wallpaper_accent_pale", {0.80, 0.80, 0.90});
-    RGB soft = readColor("wallpaper_accent_soft", {0.60, 0.60, 0.85});
-    RGB accent = readColor("wallpaper_accent", {0.40, 0.40, 0.70});
+    // low: deep/dark shade for short bars
+    // medium: soft mid tone
+    // high: pale/bright for tall bars
+    RGB deep = readColor("wallpaper_accent_deep", {0.10, 0.10, 0.20});
+    RGB soft = readColor("wallpaper_accent_soft", {0.55, 0.50, 0.65});
+    RGB pale = readColor("wallpaper_accent_pale", {0.85, 0.82, 0.90});
 
-    double luminance =
-        0.2126 * accent.r + 0.7152 * accent.g + 0.0722 * accent.b;
+    // If deep is nearly black, brighten slightly so bars are visible
+    double lum_deep = 0.2126 * deep.r + 0.7152 * deep.g + 0.0722 * deep.b;
+    if (lum_deep < 0.08)
+        deep = { deep.r * 3.0, deep.g * 3.0, deep.b * 3.0 };
 
-    // Avoid nearly black bars when the wallpaper accent is too dark.
-    if (luminance < 0.18)
-        accent = soft;
-
-    return {pale, soft, accent};
+    return {deep, soft, pale};
 }
 
 class AudioMeter {
@@ -145,18 +146,19 @@ class Visualizer : public Gtk::DrawingArea {
 public:
     Visualizer(AudioMeter& m) : meter(m), heights(48, 0.0f) {
         set_size_request(-1, 200);
-        
-        try {
-            std::string path = std::string(g_get_user_config_dir()) + "/Light/assets/settings/background-mem.png";
-            image = Gdk::Pixbuf::create_from_file(path);
-        } catch (...) {
-            std::cerr << "Failed to load image\n";
-        }
-        
+
+        // Load both bar-top images (alternated across bars)
+        std::string cfg = std::string(g_get_user_config_dir()) + "/Light/assets/settings/";
+        try { image_a = Gdk::Pixbuf::create_from_file(cfg + "elyfly.png"); }
+        catch (...) { std::cerr << "Visualizer: elyfly.png not found\n"; }
+        try { image_b = Gdk::Pixbuf::create_from_file(cfg + "elyhoc.png"); }
+        catch (...) { std::cerr << "Visualizer: elyhoc.png not found\n"; }
+
         Glib::signal_timeout().connect([this]() {
             float peak = meter.get_peak();
             for (int i = 0; i < 48; ++i) {
-                float target = peak * (1.0f - i * 0.02f) * get_height() * 1.2f;  // Boosted to reach higher
+                // All bars aim for the same height — no per-bar shrink
+                float target = peak * get_height() * 1.1f;
                 heights[i] = heights[i] * 0.65f + target * 0.35f;
             }
             queue_draw();
@@ -167,57 +169,66 @@ public:
 private:
     AudioMeter& meter;
     std::vector<float> heights;
-    Glib::RefPtr<Gdk::Pixbuf> image;
+    Glib::RefPtr<Gdk::Pixbuf> image_a;  // elyfly.png
+    Glib::RefPtr<Gdk::Pixbuf> image_b;  // elyhoc.png
 
     bool on_draw(const Cairo::RefPtr<Cairo::Context>& cr) override {
         int width = get_allocation().get_width();
         int height = get_allocation().get_height();
         int bar_width = width / 48;
+        int bar_gap = 2; // narrow gap so bars are wide and visible
 
         cr->set_source_rgba(0, 0, 0, 0);
         cr->paint();
 
-        for (int i = 0; i < 48; ++i) {
-            float bar_height = std::max(2.0f, heights[i]);
-            int x = i * bar_width;
-            int y = height - bar_height;
+        const Palette colors = readPalette(); // read once per frame
 
-            // Color gradient based on intensity
+        for (int i = 0; i < 48; ++i) {
+            float bar_height = std::max(4.0f, heights[i]);
+            int x = i * bar_width;
+            int y = height - (int)bar_height;
+
+            // Color gradient based on bar intensity
             float intensity = bar_height / height;
-            const Palette colors = readPalette();
-        if (intensity < 0.3f) {
-                cr->set_source_rgba(colors.low.r, colors.low.g, colors.low.b, 0.8);
-            } else if (intensity < 0.6f) {
-                cr->set_source_rgba(colors.medium.r, colors.medium.g, colors.medium.b, 0.6);
+            if (intensity < 0.35f) {
+                cr->set_source_rgba(colors.low.r, colors.low.g, colors.low.b, 0.9);
+            } else if (intensity < 0.65f) {
+                cr->set_source_rgba(colors.medium.r, colors.medium.g, colors.medium.b, 0.9);
             } else {
-                cr->set_source_rgba(colors.high.r, colors.high.g, colors.high.b, 1.0);
+                cr->set_source_rgba(colors.high.r, colors.high.g, colors.high.b, 0.9);
             }
 
-            cr->rectangle(x, y, bar_width - 12, bar_height);
+            cr->rectangle(x, y, bar_width - bar_gap, bar_height);
             cr->fill();
 
-            // Top highlight
-            cr->set_source_rgba(1.0, 1.0, 1.0, 0.6);
-            cr->rectangle(x, y, bar_width - 12, std::min(3.0f, bar_height));
+            // Subtle top highlight
+            cr->set_source_rgba(1.0, 1.0, 1.0, 0.4);
+            cr->rectangle(x, y, bar_width - bar_gap, std::min(3.0f, bar_height));
             cr->fill();
 
-            // Draw image ABOVE bar if there’s space
-            if (image && bar_height > 10) {
-                int img_size = std::min(bar_width - 12, 40);
-                auto scaled = image->scale_simple(img_size, img_size, Gdk::INTERP_NEAREST);
-                int img_x = x + (bar_width - img_size) / 2;
-                int img_y = y - img_size - 4; // 4px padding
-
-                if (img_y > 0) {
-                    Gdk::Cairo::set_source_pixbuf(cr, scaled, img_x, img_y);
-                    cr->paint();
+            // Draw alternating images on top of each bar
+            {
+                auto& img = (i % 2 == 0) ? image_a : image_b;
+                if (img && bar_height > 20) {
+                    int img_size = std::min(bar_width - bar_gap, 28);
+                    auto scaled = img->scale_simple(
+                        img_size, img_size, Gdk::INTERP_BILINEAR);
+                    int img_x = x + (bar_width - bar_gap - img_size) / 2;
+                    int img_y = y - img_size - 2;
+                    if (img_y >= 0) {
+                        Gdk::Cairo::set_source_pixbuf(cr, scaled, img_x, img_y);
+                        cr->paint();
+                    }
                 }
             }
         }
 
         if (!meter.has_audio()) {
-            cr->set_source_rgba(1.0, 0.6, 0.8, 0.8);
-            cr->select_font_face("sans", Cairo::FONT_SLANT_NORMAL, Cairo::FONT_WEIGHT_NORMAL);
+            // Use palette color instead of hardcoded pink
+            cr->set_source_rgba(
+                colors.medium.r, colors.medium.g, colors.medium.b, 0.8);
+            cr->select_font_face("sans", Cairo::FONT_SLANT_NORMAL,
+                                 Cairo::FONT_WEIGHT_NORMAL);
             cr->set_font_size(12);
             cr->move_to(width - 120, 20);
             cr->show_text("No audio");
