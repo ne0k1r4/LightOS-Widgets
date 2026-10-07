@@ -1,15 +1,41 @@
 # LightOS Widgets
 
-Source repository for the LightOS widget suite: the visualizer, clock, widget daemon and client, brightness, calendar, host, microphone, music, playerctl, recent-apps, stats, system-info, and volume widgets.
-
-## Build
-
-Run `make` to build the clock, light/dark visualizers, widget daemon, and client. `visualizer/build.sh` builds both visualizer variants.
+Clock widget and audio visualizer for the LightOS desktop. Gothic anime themed, wallpaper-color driven.
 
 ## Install
 
-Install the LightOS desktop defaults and their dependencies first, then run `./install.sh`. The installer places widget executables under `~/.config/Light` and helper commands under `~/.local/bin`. The main LightOS installer includes this repository as a component.
+```sh
+git clone https://github.com/ne0k1r4/LightOS-Widgets.git
+cd LightOS-Widgets
+./install.sh
+```
 
-Build dependencies are GTKmm 3, GTK 3, gtk-layer-shell, PulseAudio, jsoncpp, gio, libcurl, pkg-config, and make.
+Installs to `~/.config/Light/widgets/`. Started automatically by Hyprland on login.
 
-The original MIT notices for source files imported from ElysiaOS are retained in [LICENSES/ElysiaOS-MIT.txt](LICENSES/ElysiaOS-MIT.txt). The repository's own license is in [LICENSE](LICENSE).
+### Dependencies
+
+```sh
+sudo pacman -S gtkmm3 gtk-layer-shell libpulse jsoncpp
+```
+
+## Widgets
+
+### Clock Widget
+Displays gothic anime artwork that changes each hour (12 images for hours 1–12).
+Images are stored in `~/.config/Light/assets/clocks/clock1.png` through `clock12.png`.
+
+Started with:
+```sh
+~/.config/Light/widgets/clock_widget
+```
+
+### Audio Visualizer
+Wave+fill style spectrum analyzer. Two variants:
+- `visualizer` — Light theme colors
+- `visualizer-dark` — Dark theme colors
+
+Colors are driven by the active wallpaper palette from `~/.config/waybar/wallpaper-colors.css`.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Original MIT notices for imported source files retained in `LICENSES/`.
