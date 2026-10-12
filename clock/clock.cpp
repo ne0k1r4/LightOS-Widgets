@@ -20,7 +20,7 @@ namespace {
 constexpr int CW = 340, CH = 165, KW = 300, KH = 321;
 std::string asset_dir() {
     if (const char* e = std::getenv("LIGHTOS_CHRONO_ASSETS")) return e;
-    return std::string(g_get_user_data_dir()) + "/lightos-chrono/assets";
+    return std::string(g_get_user_data_dir()) + "/lightos-clock/assets";
 }
 std::string asset(const std::string& file) { return asset_dir() + "/" + file; }
 std::string notes_file() { return std::string(g_get_user_data_dir()) + "/lightos-chrono/notes.tsv"; }
