@@ -39,10 +39,30 @@ ShellRoot {
  property bool mediaHasCover: cover !== "" && title !== "Nothing playing"
  property var wallpaperList: []
  property int selectedWallpaper: 0
+ property var wifiNetworks: []
+ property var bluetoothDevices: []
+ property bool wifiEnabled: false
+ property bool bluetoothEnabled: false
+ property string wifiSearch: ""
+ property string bluetoothSearch: ""
+ property string wifiPassword: ""
+ property string networkFeedback: ""
+ property bool networkBusy: false
+ property string networkScript: Qt.resolvedUrl("scripts/network.py").toString().replace("file://", "")
+ function networkAction(args) {
+   if (networkBusy) return
+   networkBusy = true
+   networkCommand.command = ["python3", networkScript].concat(args)
+   networkCommand.running = true
+ }
+ function refreshNetworks() {
+   if (popover === "wifi" && !wifiNetworkQuery.running) wifiNetworkQuery.running = true
+   if (popover === "bluetooth" && !bluetoothNetworkQuery.running) bluetoothNetworkQuery.running = true
+ }
  property string home: Quickshell.env("HOME")
  property string script: Qt.resolvedUrl("scripts/control.py").toString().replace("file://", "")
  function action(args) { task.command = ["python3", script].concat(args); task.running = true }
- function open(name) { popover = popover === name ? "" : name }
+ function open(name) { popover = popover === name ? "" : name; networkFeedback=""; refreshNetworks() }
  Behavior on revealProgress { NumberAnimation { duration: root.expanded ? 550 : 350; easing.type: root.expanded ? Easing.OutCubic : Easing.InCubic } }
  onExpandedChanged: { if (expanded) { shimmerX = -120; shimmerRunning = true; shimmer.restart() } else { shimmerRunning = false; shimmer.stop() } }
  NumberAnimation { id: shimmer; target: root; property: "shimmerX"; from: -120; to: 820; duration: 720; easing.type: Easing.OutCubic; onFinished: root.shimmerRunning = false }
@@ -54,6 +74,29 @@ ShellRoot {
       try { let d=JSON.parse(this.text); root.battery=d.battery; root.charging=d.charging; root.title=d.title; root.artist=d.artist; root.cover=d.cover; root.wifi=d.wifi; root.volume=d.volume; root.audioVolume=(d.volumePercent === undefined ? 50 : d.volumePercent); root.mediaPlaying=d.playing || false; root.notificationCount=String(d.notificationCount || 0); root.notificationItems=d.notifications || []; if (root.previousNotificationCount >= 0 && Number(root.notificationCount)>root.previousNotificationCount && !root.pinned && root.popover === "") { root.notificationText=d.notificationPreview || "New notification"; root.notificationActive=true; notificationTimer.restart() } root.previousNotificationCount=Number(root.notificationCount); if (d.notificationPreview && d.notificationPreview !== root.notificationPreview) { root.notificationPreview=d.notificationPreview; if (!root.pinned && root.popover === "" && !root.notificationActive) { root.toast=d.notificationPreview; toastTimer.restart() } } } catch(e) {}
    }}
  }
+ Process {
+   id: wifiNetworkQuery
+   command: ["python3", root.networkScript, "wifi-list"]
+   stdout: StdioCollector { onStreamFinished: {
+     try { let d=JSON.parse(this.text); root.wifiEnabled=d.enabled; root.wifiNetworks=d.items || [] } catch(e) { root.networkFeedback="Wi-Fi list unavailable" }
+   }}
+ }
+ Process {
+   id: bluetoothNetworkQuery
+   command: ["python3", root.networkScript, "bt-list"]
+   stdout: StdioCollector { onStreamFinished: {
+     try { let d=JSON.parse(this.text); root.bluetoothEnabled=d.enabled; root.bluetoothDevices=d.items || [] } catch(e) { root.networkFeedback="Bluetooth list unavailable" }
+   }}
+ }
+ Process {
+   id: networkCommand
+   stdout: StdioCollector { onStreamFinished: {
+     try { let d=JSON.parse(this.text); root.networkFeedback=d.message || (d.ok ? "Done" : "Action failed") } catch(e) { root.networkFeedback="Action completed" }
+     root.networkBusy=false
+     root.refreshNetworks()
+   }}
+ }
+ Timer { interval: 6000; running: root.popover === "wifi" || root.popover === "bluetooth"; repeat: true; triggeredOnStart: true; onTriggered: root.refreshNetworks() }
  Process {
    id: wallList
    command: ["python3", root.script, "wallpapers"]
@@ -197,7 +240,7 @@ ShellRoot {
    visible: root.popover !== "" && root.popover !== "gallery"
    anchors.top: true
    implicitWidth: 340
-   implicitHeight: root.popover === "notification" ? Math.min(410, 144 + (root.notificationItems.length > 0 ? Math.min(3, root.notificationItems.length) * 69 : 90)) : (root.popover === "calendar" ? 360 : 232)
+   implicitHeight: (root.popover === "wifi" || root.popover === "bluetooth") ? 320 : root.popover === "notification" ? Math.min(410, 144 + (root.notificationItems.length > 0 ? Math.min(3, root.notificationItems.length) * 69 : 90)) : (root.popover === "calendar" ? 360 : 232)
    margins.top: 68
    color: "transparent"
    exclusionMode: ExclusionMode.Ignore
@@ -247,13 +290,224 @@ ShellRoot {
          }
          GothicButton { Layout.alignment: Qt.AlignHCenter; text: "✝  OPEN NOTIFICATIONS  ✝"; onClicked: root.action(["notifications-open"]) }
        }
-       ColumnLayout { visible: root.popover === "wifi"; Layout.fillWidth: true; spacing: 10
-         Text { text: "NETWORK  ·  " + root.wifi; color: "#E5ADB5"; font.pixelSize: 12 }
-         GothicButton { Layout.fillWidth: true; text: "✝  TOGGLE WI-FI"; onClicked: root.action(["wifi-toggle"]) }
+
+       ColumnLayout {
+         visible: root.popover === "wifi"
+         Layout.fillWidth: true
+         spacing: 8
+
+         Text {
+           text: root.wifiEnabled ? "✝ WI-FI ENABLED" : "✝ WI-FI DISABLED"
+           color: "#E5ADB5"
+         }
+
+         RowLayout {
+           GothicButton {
+             text: root.wifiEnabled ? "OFF" : "ON"
+             onClicked: root.networkAction(["wifi-toggle"])
+           }
+           GothicButton {
+             text: "SCAN"
+             onClicked: root.networkAction(["wifi-scan"])
+           }
+         }
+
+         TextField {
+           Layout.fillWidth: true
+
+           color: "#F8E7E8"
+           placeholderTextColor: "#A9858C"
+           selectionColor: "#8F2938"
+           selectedTextColor: "#FFFFFF"
+           font.pixelSize: 12
+           Layout.preferredHeight: 32
+           background: Rectangle {
+             radius: 9
+             color: "#1A090E"
+             border.color: parent.activeFocus ? "#E17A88" : "#71303A"
+             border.width: 1
+           }
+           placeholderText: "Search Wi-Fi networks"
+           onTextChanged: root.wifiSearch = text
+         }
+
+         ScrollView {
+           Layout.fillWidth: true
+           Layout.preferredHeight: 125
+           clip: true
+
+           Column {
+             width: 280
+             spacing: 5
+
+             Repeater {
+               model: root.wifiNetworks.filter(function(n) {
+                 return n.name.toLowerCase().includes(root.wifiSearch.toLowerCase())
+               })
+
+               delegate: Rectangle {
+                 required property var modelData
+                 width: 280
+                 height: 48
+                 radius: 9
+                 color: modelData.active ? "#381018" : "#1C090D"
+                 border.color: "#85303D"
+
+                 Row {
+                   anchors.fill: parent
+                   anchors.margins: 6
+                   spacing: 6
+
+                   Column {
+                     width: 170
+                     Text {
+                       text: modelData.name
+                       width: 165
+                       elide: Text.ElideRight
+                       color: "#F8E7E8"
+                       font.pixelSize: 11
+                     }
+                     Text {
+                       text: modelData.signal + "% · " + modelData.security
+                       color: "#D5A4AD"
+                       font.pixelSize: 10
+                     }
+                   }
+
+                   GothicButton {
+                     text: modelData.active ? "Disconnect" : "Connect"
+                     onClicked: root.networkAction([
+                       modelData.active ? "wifi-disconnect" : "wifi-connect",
+                       modelData.name
+                     ])
+                   }
+                 }
+               }
+             }
+           }
+         }
+
+         TextField {
+           Layout.fillWidth: true
+
+           color: "#F8E7E8"
+           placeholderTextColor: "#A9858C"
+           selectionColor: "#8F2938"
+           selectedTextColor: "#FFFFFF"
+           font.pixelSize: 12
+           Layout.preferredHeight: 32
+           background: Rectangle {
+             radius: 9
+             color: "#1A090E"
+             border.color: parent.activeFocus ? "#E17A88" : "#71303A"
+             border.width: 1
+           }
+           placeholderText: "Wi-Fi password"
+           echoMode: TextInput.Password
+           onTextChanged: root.wifiPassword = text
+         }
+
+         Text {
+           text: root.networkFeedback
+           color: "#E5ADB5"
+           font.pixelSize: 11
+           Layout.fillWidth: true
+         }
        }
-       ColumnLayout { visible: root.popover === "bluetooth"; Layout.fillWidth: true; spacing: 10
-         Text { text: "BLUETOOTH DEVICES"; color: "#E5ADB5"; font.pixelSize: 12 }
-         GothicButton { Layout.fillWidth: true; text: "✝  TOGGLE BLUETOOTH"; onClicked: root.action(["bluetooth-toggle"]) }
+
+       ColumnLayout {
+         visible: root.popover === "bluetooth"
+         Layout.fillWidth: true
+         spacing: 8
+
+         Text {
+           text: root.bluetoothEnabled ? "✝ BLUETOOTH ENABLED" : "✝ BLUETOOTH DISABLED"
+           color: "#E5ADB5"
+         }
+
+         RowLayout {
+           GothicButton {
+             text: root.bluetoothEnabled ? "OFF" : "ON"
+             onClicked: root.networkAction(["bt-power", root.bluetoothEnabled ? "off" : "on"])
+           }
+           GothicButton {
+             text: "SCAN"
+             onClicked: root.networkAction(["bt-scan"])
+           }
+         }
+
+         TextField {
+           Layout.fillWidth: true
+
+           color: "#F8E7E8"
+           placeholderTextColor: "#A9858C"
+           selectionColor: "#8F2938"
+           selectedTextColor: "#FFFFFF"
+           font.pixelSize: 12
+           Layout.preferredHeight: 32
+           background: Rectangle {
+             radius: 9
+             color: "#1A090E"
+             border.color: parent.activeFocus ? "#E17A88" : "#71303A"
+             border.width: 1
+           }
+           placeholderText: "Search Bluetooth devices"
+           onTextChanged: root.bluetoothSearch = text
+         }
+
+         ScrollView {
+           Layout.fillWidth: true
+           Layout.preferredHeight: 125
+           clip: true
+
+           Column {
+             width: 280
+             spacing: 5
+
+             Repeater {
+               model: root.bluetoothDevices.filter(function(d) {
+                 return d.name.toLowerCase().includes(root.bluetoothSearch.toLowerCase())
+               })
+
+               delegate: Rectangle {
+                 required property var modelData
+                 width: 280
+                 height: 52
+                 radius: 9
+                 color: "#1C090D"
+                 border.color: "#85303D"
+
+                 Row {
+                   anchors.fill: parent
+                   anchors.margins: 6
+                   spacing: 5
+
+                   Text {
+                     text: modelData.name
+                     width: 145
+                     elide: Text.ElideRight
+                     color: "#F8E7E8"
+                     font.pixelSize: 11
+                   }
+
+                   GothicButton {
+                     text: modelData.connected ? "Disconnect" : "Connect"
+                     onClicked: root.networkAction([
+                       modelData.connected ? "bt-disconnect" : "bt-connect",
+                       modelData.address
+                     ])
+                   }
+                 }
+               }
+             }
+           }
+         }
+
+         Text {
+           text: root.networkFeedback
+           color: "#E5ADB5"
+           font.pixelSize: 11
+         }
        }
        ColumnLayout { visible: root.popover === "volume"; Layout.fillWidth: true; spacing: 10
          Text { text: "VOLUME  ·  " + Math.round(root.audioVolume) + "%"; color: "#E5ADB5"; font.pixelSize: 12 }
