@@ -4,18 +4,117 @@ HOME=pathlib.Path.home()
 def run(args):
     try: return subprocess.run(args,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=8).stdout.strip()
     except Exception: return ''
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".mov"}
+
+WALLPAPER_ROOT = HOME / ".config" / "Light" / "wallpaper"
+
+# Personal installation only. Do not publish this extra directory.
+EXTRA_WALLPAPER_ROOTS = []
+
 def wallpapers():
-    base=HOME/'Pictures'/'Wallpapers'
-    return sorted(str(p) for p in base.rglob('*') if p.suffix.lower() in ('.jpg','.jpeg','.png','.webp')) if base.exists() else []
+    roots = [WALLPAPER_ROOT] + EXTRA_WALLPAPER_ROOTS
+    found = set()
+    for base in roots:
+        if base.is_dir():
+            for p in base.rglob("*"):
+                if p.is_file() and p.suffix.lower() in IMAGE_EXTS | VIDEO_EXTS:
+                    found.add(str(p.resolve()))
+    return sorted(found)
+
 def current():
-    return (HOME/'.cache/lightos-gothic-wallpaper').read_text().strip() if (HOME/'.cache/lightos-gothic-wallpaper').exists() else ''
+    cache = HOME / ".cache" / "lightos-gothic-wallpaper"
+    return cache.read_text().strip() if cache.exists() else ""
+
 def setwall(path):
-    if not pathlib.Path(path).is_file() or path not in wallpapers():return
-    subprocess.Popen(['awww','img',path,'--transition-type','wipe','--transition-duration','0.7'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-    (HOME/'.cache').mkdir(exist_ok=True)
-    (HOME/'.cache/lightos-gothic-wallpaper').write_text(path)
+    import time
+    import shutil
+
+    target = Path(path).resolve()
+    if str(target) not in wallpapers():
+        print("Wallpaper not in gallery", file=sys.stderr)
+        return
+
+    is_video = target.suffix.lower() in VIDEO_EXTS
+
+    if is_video:
+        if not shutil.which("mpvpaper"):
+            print("mpvpaper not installed", file=sys.stderr)
+            return
+
+        subprocess.run(["pkill", "-x", "mpvpaper"], check=False)
+        time.sleep(0.25)
+
+        subprocess.Popen([
+            "mpvpaper",
+            "-o", "loop audio=auto volume=50 no-border keepaspect=no hwdec=auto",
+            "*", str(target)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+           start_new_session=True)
+    else:
+        if not shutil.which("awww"):
+            print("awww not installed", file=sys.stderr)
+            return
+
+        subprocess.run(["pkill", "-x", "mpvpaper"], check=False)
+
+        subprocess.Popen([
+            "awww", "img", str(target),
+            "--transition-type", "wipe",
+            "--transition-duration", "0.7"
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+           start_new_session=True)
+
+    cache = HOME / ".cache" / "lightos-gothic-wallpaper"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(str(target))
+
+    color_script = HOME / ".config/waybar/Scripts/wallpaper-colors.py"
+    if color_script.is_file():
+        subprocess.Popen(
+            ["python3", str(color_script), str(target)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True
+        )
+
+# LIGHTOS_V113_THUMBNAILS
+
+def wallpaper_thumbnails():
+    import hashlib
+    from urllib.parse import quote
+    cache = HOME / '.cache' / 'lightos-gothic-thumbnails'
+    cache.mkdir(parents=True, exist_ok=True)
+    result = {}
+    for item in wallpapers():
+        path = pathlib.Path(item)
+        if path.suffix.lower() not in VIDEO_EXTS:
+            continue
+        key = hashlib.sha256(str(path).encode('utf-8')).hexdigest()[:24]
+        target = cache / (key + '.jpg')
+        try:
+            stale = not target.exists() or target.stat().st_mtime < path.stat().st_mtime
+            if stale:
+                temp = cache / (key + '.tmp.jpg')
+                proc = subprocess.run(
+                    ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin',
+                     '-ss', '00:00:01', '-i', str(path), '-frames:v', '1',
+                     '-vf', 'scale=320:180:force_original_aspect_ratio=decrease',
+                     '-y', str(temp)], timeout=12, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL)
+                if proc.returncode == 0 and temp.is_file():
+                    temp.replace(target)
+                else:
+                    temp.unlink(missing_ok=True)
+            if target.is_file():
+                result[item] = target.as_uri()
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return result
+
 cmd=sys.argv[1] if len(sys.argv)>1 else 'status'
-if cmd=='wallpapers': print(json.dumps(wallpapers()))
+if cmd=='wallpaper-thumbnails': print(json.dumps(wallpaper_thumbnails()))
+elif cmd=='wallpapers': print(json.dumps(wallpapers()))
 elif cmd=='next-wallpaper':
     a=wallpapers()
     if a:setwall(a[(a.index(current())+1)%len(a)] if current() in a else a[0])

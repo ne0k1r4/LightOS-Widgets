@@ -37,6 +37,19 @@ ShellRoot {
  property string notificationText: ""
  property bool ornamentGlow: false
  property bool mediaHasCover: cover !== "" && title !== "Nothing playing"
+ // LIGHTOS_V113_GALLERY
+ property string galleryFilter: "All"
+ property var galleryThumbnails: ({})
+ property var galleryFiltered: wallpaperList.filter(function(path) {
+   var lower = path.toLowerCase()
+   var video = /\.(mp4|webm|mkv|mov)$/.test(lower)
+   if (galleryFilter === "Videos") return video
+   if (galleryFilter === "Light") return path.indexOf("/wallpaper/Light/") !== -1
+   if (galleryFilter === "Dark") return path.indexOf("/wallpaper/Dark/") !== -1
+   return true
+ })
+ function isWallpaperVideo(path) { return /\.(mp4|webm|mkv|mov)$/i.test(path) }
+ function wallpaperPreview(path) { return isWallpaperVideo(path) ? (galleryThumbnails[path] || "") : "file://" + path }
  property var wallpaperList: []
  property int selectedWallpaper: 0
  property var wifiNetworks: []
@@ -62,7 +75,7 @@ ShellRoot {
  property string home: Quickshell.env("HOME")
  property string script: Qt.resolvedUrl("scripts/control.py").toString().replace("file://", "")
  function action(args) { task.command = ["python3", script].concat(args); task.running = true }
- function open(name) { popover = popover === name ? "" : name; networkFeedback=""; refreshNetworks() }
+ function open(name) { popover = popover === name ? "" : name; networkFeedback=""; refreshNetworks(); if (popover === "gallery") { galleryFilter = "All"; selectedWallpaper = 0; wallList.running = true; galleryThumbnailProcess.running = true } }
  Behavior on revealProgress { NumberAnimation { duration: root.expanded ? 550 : 350; easing.type: root.expanded ? Easing.OutCubic : Easing.InCubic } }
  onExpandedChanged: { if (expanded) { shimmerX = -120; shimmerRunning = true; shimmer.restart() } else { shimmerRunning = false; shimmer.stop() } }
  NumberAnimation { id: shimmer; target: root; property: "shimmerX"; from: -120; to: 820; duration: 720; easing.type: Easing.OutCubic; onFinished: root.shimmerRunning = false }
@@ -101,6 +114,13 @@ ShellRoot {
    id: wallList
    command: ["python3", root.script, "wallpapers"]
    stdout: StdioCollector { onStreamFinished: {try { root.wallpaperList=JSON.parse(this.text) } catch(e) {} }}
+ }
+ Process {
+   id: galleryThumbnailProcess
+   command: ["python3", root.script, "wallpaper-thumbnails"]
+   stdout: StdioCollector { onStreamFinished: {
+     try { root.galleryThumbnails = JSON.parse(this.text) } catch(e) { console.warn("Wallpaper thumbnails unavailable", e) }
+   }}
  }
  Timer { interval: 2500; running: true; repeat: true; triggeredOnStart: true; onTriggered: status.running=true }
  Timer { interval: 1000; running: true; repeat: true; onTriggered: {root.clock=Qt.formatTime(new Date(),"hh:mm AP");root.dateText=Qt.formatDate(new Date(),"dddd, MMMM d")}}
@@ -540,48 +560,98 @@ ShellRoot {
      }
    }
  }
- PanelWindow {
-   id: gallery
-   visible:root.popover==="gallery"
-   anchors {top:true;bottom:true;left:true;right:true}
-   color:"#C4080405"
-   Rectangle {
-     width:600;height:510;anchors.centerIn:parent;radius:22;color:"#100709";border.color:"#B52B3D";border.width:2
-     Image { source: "assets/ornaments/corner_top_left.png"; anchors.left: parent.left; anchors.top: parent.top; width: 130; height: 80; opacity: .7 }
-     Image { source: "assets/ornaments/panel_rose_corner.png"; anchors.right: parent.right; anchors.bottom: parent.bottom; width: 140; height: 100; opacity: .65 }
-     Rectangle { anchors.fill: parent; anchors.margins: 4; radius: 18; color: "transparent"; border.color: "#AD7979"; opacity: .5 }
-     ColumnLayout { anchors.fill:parent;anchors.margins:24;spacing:12
-       RowLayout { Layout.fillWidth:true
-         Text { text:"✝  MISA'S GALLERY  ✝";color:"#F8E7E8";font.pixelSize:20;Layout.fillWidth:true }
-         Text { text:"✕";color:"#F8E7E8";font.pixelSize:20;MouseArea{anchors.fill:parent;onClicked:root.popover=""} }
-       }
-       Rectangle { Layout.fillWidth:true;height:1;color:"#71303A" }
-       Image { Layout.fillWidth:true;Layout.preferredHeight:260;source:root.wallpaperList.length?"file://"+root.wallpaperList[root.selectedWallpaper]:"";fillMode:Image.PreserveAspectFit }
-       Text { text:root.wallpaperList.length?root.wallpaperList[root.selectedWallpaper].split("/").pop():"Add wallpapers to ~/Pictures/Wallpapers";color:"#E3C4C7";Layout.alignment:Qt.AlignHCenter }
-       Flickable {
-         Layout.fillWidth: true; Layout.preferredHeight: 66
-         contentWidth: thumbnails.width; contentHeight: 64; clip: true
-         Row { id: thumbnails; spacing: 8
-           Repeater { model: root.wallpaperList
-             delegate: Rectangle {
-               id: thumb
-               required property string modelData
-               required property int index
-               width: 98; height: 60; radius: 8; color: "#470A13"
-               border.width: root.selectedWallpaper === index ? 2 : 1
-               border.color: root.selectedWallpaper === index ? "#F0B2B8" : "#71303A"
-               Image { anchors.fill: parent; anchors.margins: 3; source: "file://" + thumb.modelData; fillMode: Image.PreserveAspectCrop; asynchronous: true }
-               MouseArea { anchors.fill: parent; onClicked: root.selectedWallpaper = thumb.index }
-             }
-           }
-         }
-       }
-       RowLayout { Layout.alignment:Qt.AlignHCenter;spacing:18
-         GothicButton { text:"◀ Previous";onClicked:if(root.wallpaperList.length)root.selectedWallpaper=(root.selectedWallpaper+root.wallpaperList.length-1)%root.wallpaperList.length }
-         GothicButton { text:"Next ▶";onClicked:if(root.wallpaperList.length)root.selectedWallpaper=(root.selectedWallpaper+1)%root.wallpaperList.length }
-       }
-       GothicButton { text:"✝  APPLY WALLPAPER  ✝";Layout.alignment:Qt.AlignHCenter;enabled:root.wallpaperList.length>0;onClicked:{root.action(["set-wallpaper",root.wallpaperList[root.selectedWallpaper]]);root.popover=""} }
-     }
-   }
- }
+  PanelWindow {
+    id: gallery
+    visible: root.popover === "gallery"
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "#C4080405"
+    Rectangle {
+      width: 620; height: 540; anchors.centerIn: parent
+      radius: 22; color: "#100709"; border.color: "#B52B3D"; border.width: 2
+      clip: true
+      Image { source: "assets/ornaments/corner_top_left.png"; anchors.left: parent.left; anchors.top: parent.top; width: 120; height: 80; opacity: .55 }
+      Image { source: "assets/ornaments/panel_rose_corner.png"; anchors.right: parent.right; anchors.bottom: parent.bottom; width: 120; height: 100; opacity: .45 }
+      Rectangle { anchors.fill: parent; anchors.margins: 4; radius: 18; color: "transparent"; border.color: "#AD7979"; opacity: .45 }
+      ColumnLayout {
+        anchors.fill: parent; anchors.margins: 22; spacing: 10
+        RowLayout {
+          Layout.fillWidth: true
+          Text { text: "✝  MISA'S WALLPAPER GALLERY  ✝"; color: "#F8E7E8"; font.pixelSize: 17; Layout.fillWidth: true }
+          Text { text: "✕"; color: "#F8E7E8"; font.pixelSize: 20; MouseArea { anchors.fill: parent; onClicked: root.popover = "" } }
+        }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#71303A" }
+        RowLayout {
+          Layout.fillWidth: true; spacing: 6
+          Repeater {
+            model: ["All", "Light", "Dark", "Videos"]
+            delegate: Rectangle {
+              required property string modelData
+              Layout.fillWidth: true; Layout.preferredHeight: 29; radius: 8
+              color: root.galleryFilter === modelData ? "#68202E" : "#1B0A0E"
+              border.color: root.galleryFilter === modelData ? "#E5ADB5" : "#71303A"
+              Text { anchors.centerIn: parent; text: modelData; color: "#F8E7E8"; font.pixelSize: 11 }
+              MouseArea { anchors.fill: parent; onClicked: { root.galleryFilter = modelData; root.selectedWallpaper = 0 } }
+            }
+          }
+        }
+        Rectangle {
+          Layout.fillWidth: true; Layout.preferredHeight: 245; radius: 12
+          color: "#18090E"; border.color: "#71303A"; clip: true
+          Image {
+            anchors.fill: parent; anchors.margins: 4
+            source: root.galleryFiltered.length ? root.wallpaperPreview(root.galleryFiltered[Math.min(root.selectedWallpaper, root.galleryFiltered.length - 1)]) : ""
+            fillMode: Image.PreserveAspectFit; asynchronous: true
+          }
+          Text {
+            anchors.centerIn: parent
+            visible: root.galleryFiltered.length === 0
+            text: "No wallpapers in this collection"
+            color: "#D5A4AD"; font.pixelSize: 12
+          }
+          Rectangle {
+            visible: root.galleryFiltered.length > 0 && root.isWallpaperVideo(root.galleryFiltered[Math.min(root.selectedWallpaper, root.galleryFiltered.length - 1)])
+            anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 10
+            width: 70; height: 25; radius: 8; color: "#A0201016"; border.color: "#B52B3D"
+            Text { anchors.centerIn: parent; text: "▶ VIDEO"; color: "#F8E7E8"; font.pixelSize: 10 }
+          }
+        }
+        Text {
+          Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+          text: root.galleryFiltered.length ? root.galleryFiltered[Math.min(root.selectedWallpaper, root.galleryFiltered.length - 1)].split("/").pop() : "No wallpapers found"
+          color: "#E3C4C7"; font.pixelSize: 11; elide: Text.ElideMiddle
+        }
+        Flickable {
+          Layout.fillWidth: true; Layout.preferredHeight: 77; clip: true
+          contentWidth: galleryThumbRow.width; contentHeight: 72
+          Row {
+            id: galleryThumbRow; spacing: 8
+            Repeater {
+              model: root.galleryFiltered
+              delegate: Rectangle {
+                required property string modelData
+                required property int index
+                width: 104; height: 66; radius: 9; color: "#250C13"; clip: true
+                border.width: root.selectedWallpaper === index ? 2 : 1
+                border.color: root.selectedWallpaper === index ? "#F0B2B8" : "#71303A"
+                Image { anchors.fill: parent; anchors.margins: 3; source: root.wallpaperPreview(modelData); fillMode: Image.PreserveAspectCrop; asynchronous: true }
+                Rectangle {
+                  visible: root.isWallpaperVideo(modelData)
+                  anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 4
+                  width: 20; height: 18; radius: 5; color: "#C0200B12"
+                  Text { anchors.centerIn: parent; text: "▶"; color: "#F8E7E8"; font.pixelSize: 11 }
+                }
+                MouseArea { anchors.fill: parent; onClicked: root.selectedWallpaper = index }
+              }
+            }
+          }
+        }
+        RowLayout {
+          Layout.alignment: Qt.AlignHCenter; spacing: 14
+          GothicButton { text: "◀ Previous"; enabled: root.galleryFiltered.length > 0; onClicked: root.selectedWallpaper = (root.selectedWallpaper + root.galleryFiltered.length - 1) % root.galleryFiltered.length }
+          GothicButton { text: "Next ▶"; enabled: root.galleryFiltered.length > 0; onClicked: root.selectedWallpaper = (root.selectedWallpaper + 1) % root.galleryFiltered.length }
+          GothicButton { text: "✝ APPLY ✝"; enabled: root.galleryFiltered.length > 0; onClicked: { root.action(["set-wallpaper", root.galleryFiltered[root.selectedWallpaper]]); root.popover = "" } }
+        }
+      }
+    }
+  }
 }
