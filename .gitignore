@@ -6,3 +6,9 @@ widgets/light-widget-daemon
 widgets/light-widget-client
 
 /visualizer/hybrid/lightos-hybrid-visualizer
+
+# LightOS Quickshell development files
+quickshell/death-note-pill/**/__pycache__/
+quickshell/death-note-pill/**/*.pyc
+quickshell/death-note-pill/**/*.bak
+quickshell/death-note-pill/**/*.before-notification-fix
