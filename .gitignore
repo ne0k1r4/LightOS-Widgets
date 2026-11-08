@@ -18,3 +18,9 @@ quickshell/death-note-pill/**/__pycache__/
 quickshell/death-note-pill/**/*.pyc
 quickshell/death-note-pill/**/*.bak
 quickshell/death-note-pill/**/*.before-notification-fix
+
+# Quickshell generated files and backups
+quickshell/death-note-pill/**/__pycache__/
+quickshell/death-note-pill/**/*.pyc
+quickshell/death-note-pill/**/*.bak
+quickshell/death-note-pill/**/*.before-*
